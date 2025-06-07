@@ -1,0 +1,23 @@
+ .spinner {
+    display: none;
+    border: 2px solid #000; /* Black border to match button text */
+    border-top: 2px solid #eab308; /* Tailwind yellow-500 */
+    border-radius: 50%;
+    width: 1rem;
+    height: 1rem;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  .loading .spinner {
+    display: inline-block;
+  }
+  .loading .button-text {
+    display: none;
+  }
+  .loading {
+    opacity: 0.8;
+    cursor: not-allowed;
+  }
