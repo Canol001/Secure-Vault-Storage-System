@@ -208,7 +208,7 @@ document.getElementById('reset-password-form')?.addEventListener('submit', async
   }
 });
 
-// Logout (no spinner needed)
+// Logout
 document.getElementById('logout-btn')?.addEventListener('click', () => {
   token = '';
   localStorage.removeItem('vaultToken');
@@ -351,7 +351,7 @@ async function getItems() {
       const li = document.createElement('li');
       li.innerHTML = `
         <button class="w-full text-left py-2 px-3 bg-white rounded-md hover:bg-gray-100 border border-gray-300" onclick="viewItem(${item.id})">
-          ${item.title} (${item.type})
+          ${item.title} (${item.type}${item.extension ? ', .' + item.extension : ''})
         </button>
       `;
       itemsList.appendChild(li);
@@ -391,13 +391,13 @@ async function viewItem(id) {
         doc: 'application/msword',
         docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       };
-      const extension = result.title.split('.').pop()?.toLowerCase() || 'pdf';
-      const mimeType = mimeTypes[extension] || 'application/pdf';
+      const extension = result.extension || 'pdf'; // Fallback to 'pdf' for legacy data
+      const mimeType = mimeTypes[extension.toLowerCase()] || 'application/pdf';
       const blob = new Blob([byteNumbers], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${result.title}.${extension}`;
+      a.download = `${result.title}.${extension}`; // Use stored extension
       a.textContent = `Download ${result.title}`;
       a.className = 'hidden';
       document.body.appendChild(a);
@@ -439,7 +439,7 @@ async function getModifyItems() {
       const li = document.createElement('li');
       li.innerHTML = `
         <button class="w-full text-left py-2 px-3 bg-white rounded-md hover:bg-gray-100 border border-gray-300" onclick="modifyItem(${item.id})">
-          ${item.title} (${item.type})
+          ${item.title} (${item.type}${item.extension ? ', .' + item.extension : ''})
         </button>
       `;
       itemsList.appendChild(li);
@@ -541,93 +541,93 @@ document.getElementById('modify-cancel')?.addEventListener('click', () => {
 
 // Load logs
 async function loadLogs(page = 1) {
-    if (!token) {
-        console.warn('No token for loadLogs');
-        showFeedback('Please log in first.', true);
-        setTimeout(() => { window.location.href = 'index.html'; }, 1000);
-        return;
+  if (!token) {
+    console.warn('No token for loadLogs');
+    showFeedback('Please log in first.', true);
+    setTimeout(() => { window.location.href = 'index.html'; }, 1000);
+    return;
+  }
+  try {
+    const response = await fetch('/logs', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.status === 401 || response.status === 403) {
+      console.warn('Auth error:', response.status);
+      showFeedback('Session expired. Please log in again.', true);
+      localStorage.removeItem('vaultToken');
+      setTimeout(() => { window.location.href = 'index.html'; }, 1000);
+      return;
     }
-    try {
-        const response = await fetch('/logs', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.status === 401 || response.status === 403) {
-            console.warn('Auth error:', response.status);
-            showFeedback('Session expired. Please log in again.', true);
-            localStorage.removeItem('vaultToken');
-            setTimeout(() => { window.location.href = 'index.html'; }, 1000);
-            return;
-        }
-        const result = await response.json();
-        console.log('Logs response:', result); // Debug
-        const logsContent = document.getElementById('logs-content');
-        const pagination = document.getElementById('logs-pagination');
-        if (result.error) {
-            console.warn('Logs error:', result.error);
-            logsContent.innerHTML = `<p class="text-gray-500 text-sm">${result.error}</p>`;
-            showFeedback(result.error, true);
-            return;
-        }
-        const sortedLogs = result.logs.sort((a, b) => {
-            const dateA = new Date(a.timestamp);
-            const dateB = new Date(b.timestamp);
-            if (isNaN(dateA) || isNaN(dateB)) {
-                console.warn('Invalid timestamp:', a.timestamp, b.timestamp);
-                return 0;
-            }
-            return dateB - dateA;
-        });
-        console.log('Sorted logs:', sortedLogs); // Debug
-        const totalLogs = sortedLogs.length;
-        if (totalLogs === 0) {
-            logsContent.innerHTML = `<p class="text-gray-500 text-sm text-center py-4">No logs available yet. Try storing or retrieving items!</p>`;
-            pagination.innerHTML = '';
-            console.log('No logs to display');
-            return;
-        }
-        const totalPages = Math.ceil(totalLogs / logsPerPage);
-        currentLogPage = Math.min(Math.max(page, 1), totalPages);
-        const start = (currentLogPage - 1) * logsPerPage;
-        const end = start + logsPerPage;
-        const paginatedLogs = sortedLogs.slice(start, end);
-        logsContent.innerHTML = `
-            <h3 class="text-md font-semibold text-black mb-3">Analytics</h3>
-            <p class="text-gray-700 text-sm">Items Stored: ${result.analytics.itemCount}</p>
-            <p class="text-gray-700 text-sm">Last Login: ${result.analytics.lastLogin || 'N/A'}</p>
-            <h3 class="text-md font-semibold text-black mt-5 mb-3">Logs</h3>
-            <ul class="space-y-1">
-                ${paginatedLogs.map(log => `<li class="text-gray-700 text-sm py-1 border-b border-gray-200">${log.action} at ${log.timestamp}</li>`).join('')}
-            </ul>
+    const result = await response.json();
+    console.log('Logs response:', result); // Debug
+    const logsContent = document.getElementById('logs-content');
+    const pagination = document.getElementById('logs-pagination');
+    if (result.error) {
+      console.warn('Logs error:', result.error);
+      logsContent.innerHTML = `<p class="text-gray-500 text-sm">${result.error}</p>`;
+      showFeedback(result.error, true);
+      return;
+    }
+    const sortedLogs = result.logs.sort((a, b) => {
+      const dateA = new Date(a.timestamp);
+      const dateB = new Date(b.timestamp);
+      if (isNaN(dateA) || isNaN(dateB)) {
+        console.warn('Invalid timestamp:', a.timestamp, b.timestamp);
+        return 0;
+      }
+      return dateB - dateA;
+    });
+    console.log('Sorted logs:', sortedLogs); // Debug
+    const totalLogs = sortedLogs.length;
+    if (totalLogs === 0) {
+      logsContent.innerHTML = `<p class="text-gray-500 text-sm text-center py-4">No logs available yet. Try storing or retrieving items!</p>`;
+      pagination.innerHTML = '';
+      console.log('No logs to display');
+      return;
+    }
+    const totalPages = Math.ceil(totalLogs / logsPerPage);
+    currentLogPage = Math.min(Math.max(page, 1), totalPages);
+    const start = (currentLogPage - 1) * logsPerPage;
+    const end = start + logsPerPage;
+    const paginatedLogs = sortedLogs.slice(start, end);
+    logsContent.innerHTML = `
+      <h3 class="text-md font-semibold text-black mb-3">Analytics</h3>
+      <p class="text-gray-700 text-sm">Items Stored: ${result.analytics.itemCount}</p>
+      <p class="text-gray-700 text-sm">Last Login: ${result.analytics.lastLogin || 'N/A'}</p>
+      <h3 class="text-md font-semibold text-black mt-5 mb-3">Logs</h3>
+      <ul class="space-y-1">
+        ${paginatedLogs.map(log => `<li class="text-gray-700 text-sm py-1 border-b border-gray-200">${log.action} at ${log.timestamp}</li>`).join('')}
+      </ul>
+    `;
+    console.log('Rendered logs:', paginatedLogs); // Debug
+    pagination.innerHTML = '';
+    if (totalPages > 1) {
+      pagination.innerHTML += `
+        <button class="py-1 px-3 bg-white border border-gray-300 rounded-md text-black hover:bg-gray-100 ${currentLogPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}"
+                ${currentLogPage === 1 ? 'disabled' : `onclick="loadLogs(${currentLogPage - 1})"`}>
+          Previous
+        </button>
+      `;
+      for (let i = 1; i <= totalPages; i++) {
+        pagination.innerHTML += `
+          <button class="py-1 px-3 border border-gray-300 rounded-md ${i === currentLogPage ? 'bg-yellow-500 text-black' : 'bg-white text-black hover:bg-gray-100'}"
+                  onclick="loadLogs(${i})">
+            ${i}
+          </button>
         `;
-        console.log('Rendered logs:', paginatedLogs); // Debug
-        pagination.innerHTML = '';
-        if (totalPages > 1) {
-            pagination.innerHTML += `
-                <button class="py-1 px-3 bg-white border border-gray-300 rounded-md text-black hover:bg-gray-100 ${currentLogPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}"
-                        ${currentLogPage === 1 ? 'disabled' : `onclick="loadLogs(${currentLogPage - 1})"`}>
-                    Previous
-                </button>
-            `;
-            for (let i = 1; i <= totalPages; i++) {
-                pagination.innerHTML += `
-                    <button class="py-1 px-3 border border-gray-300 rounded-md ${i === currentLogPage ? 'bg-yellow-500 text-black' : 'bg-white text-black hover:bg-gray-100'}"
-                            onclick="loadLogs(${i})">
-                        ${i}
-                    </button>
-                `;
-            }
-            pagination.innerHTML += `
-                <button class="py-1 px-3 bg-white border border-gray-300 rounded-md text-black hover:bg-gray-100 ${currentLogPage === totalPages ? 'opacity-50 cursor-not-allowed' : ''}"
-                        ${currentLogPage === totalPages ? 'disabled' : `onclick="loadLogs(${currentLogPage + 1})"`}>
-                    Next
-                </button>
-            `;
-        }
-    } catch (err) {
-        console.error('Load logs error:', err);
-        document.getElementById('logs-content').innerHTML = '<p class="text-gray-500 text-sm">Error loading logs.</p>';
-        showFeedback('Error loading logs.', true);
+      }
+      pagination.innerHTML += `
+        <button class="py-1 px-3 bg-white border border-gray-300 rounded-md text-black hover:bg-gray-100 ${currentLogPage === totalPages ? 'opacity-50 cursor-not-allowed' : ''}"
+                ${currentLogPage === totalPages ? 'disabled' : `onclick="loadLogs(${currentLogPage + 1})"`}>
+          Next
+        </button>
+      `;
     }
+  } catch (err) {
+    console.error('Load logs error:', err);
+    document.getElementById('logs-content').innerHTML = '<p class="text-gray-500 text-sm">Error loading logs.</p>';
+    showFeedback('Error loading logs.', true);
+  }
 }
 
 // Check token and load logs on home page load
@@ -640,4 +640,48 @@ if (window.location.pathname.includes('home.html')) {
   } else {
     loadLogs();
   }
+}
+
+// Check admin status for admin link
+async function checkAdmin() {
+  if (!token) return;
+  try {
+    const response = await fetch('/user/info', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const result = await response.json();
+    if (result.is_admin) {
+      const nav = document.createElement('div');
+      nav.innerHTML = `<a href="/admin" class="py-1 px-3 bg-white border border-gray-300 rounded-md text-black hover:bg-gray-100">Admin Dashboard</a>`;
+      document.body.insertBefore(nav, document.body.firstChild);
+    }
+  } catch (err) {
+    console.error('Check admin error:', err);
+  }
+}
+if (window.location.pathname.includes('home.html')) {
+  checkAdmin();
+}
+
+// Date restriction for DOB (must be at least 8 years ago)
+if (document.getElementById('dob')) {
+  const today = new Date('2025-06-07');
+  const minDate = new Date(today);
+  minDate.setFullYear(today.getFullYear() - 8);
+  const formatDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const dobInput = document.getElementById('dob');
+  dobInput.max = formatDate(today);
+  dobInput.min = formatDate(new Date(1900, 0, 1));
+  dobInput.addEventListener('change', (e) => {
+    const selectedDate = new Date(e.target.value);
+    if (selectedDate > minDate) {
+      showFeedback('Date of birth must be at least 8 years ago.', true);
+      e.target.value = '';
+    }
+  });
 }

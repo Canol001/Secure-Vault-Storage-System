@@ -51,8 +51,9 @@
             </svg>
           </span>
           <input type="date" id="dob" required
-                 class="w-full px-4 py-2 pl-10 bg-white border border-gray-300 rounded-md text-gray-700 focus:outline-none focus:ring-2 focus:ring-yellow-500">
-        </div>
+       class="w-full px-4 py-2 pl-10 bg-white border border-gray-300 rounded-md text-gray-700 focus:outline-none focus:ring-2 focus:ring-yellow-500">
+
+    </div>
       </div>
       <div class="relative">
         <label for="favorite_color" class="block text-sm font-medium text-gray-700">Favorite Color</label>
@@ -114,5 +115,36 @@
     </div>
   </div>
   <script src="script.js"></script>
+  <script>
+    // Get the current date (June 7, 2025)
+    const today = new Date('2025-06-07');
+    
+    // Calculate the date 8 years ago
+    const minDate = new Date(today);
+    minDate.setFullYear(today.getFullYear() - 8);
+    
+    // Format dates as YYYY-MM-DD for the input element
+    const formatDate = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+    
+    // Set the max and min attributes for the date input
+    const dobInput = document.getElementById('dob');
+    dobInput.max = formatDate(today); // Prevent future dates
+    dobInput.min = formatDate(new Date(1900, 0, 1)); // Optional: set a reasonable lower bound (e.g., 1900)
+    
+    // JavaScript validation to ensure the date is at least 8 years ago
+    dobInput.addEventListener('change', (e) => {
+        const selectedDate = new Date(e.target.value);
+        if (selectedDate > minDate) {
+            // Assuming showFeedback is available from your index.js
+            showFeedback('You must be atleast 8 Years old.', true);
+            e.target.value = ''; // Clear the invalid input
+        }
+    });
+</script>
 </body>
 </html>

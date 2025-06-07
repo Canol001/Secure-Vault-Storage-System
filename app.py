@@ -501,6 +501,55 @@ def vault_modify(id):
         logger.error(f"Vault modify error: {e}")
         return jsonify({'error': 'Failed to modify data'}), 500
 
+@app.route('/admin')
+def serve_admin():
+    return send_from_directory('public', 'admin.html')
+
+@app.route('/admin/users', methods=['GET'])
+def admin_users():
+    user = authenticate_token()
+    if isinstance(user, tuple):
+        logger.warning(f"Authentication failed: {user[0].get('error')}")
+        return user
+    
+    try:
+        with sqlite3.connect('database.db') as conn:
+            cursor = conn.cursor()
+            # Check if user is admin
+            cursor.execute('SELECT is_admin FROM users WHERE id = ?', (user['id'],))
+            is_admin = cursor.fetchone()
+            if not is_admin or not is_admin[0]:
+                return jsonify({'error': 'Admin access required'}), 403
+                
+            # Get all users and their stats
+            cursor.execute('''
+                SELECT u.id, u.name, u.email, u.dob, u.favorite_color,
+                       COUNT(v.id) as vaultItems,
+                       (SELECT l.timestamp FROM logs l 
+                        WHERE l.userId = u.id AND l.action = 'Logged in' 
+                        ORDER BY l.timestamp DESC LIMIT 1) as lastLogin
+                FROM users u
+                LEFT JOIN vault v ON u.id = v.userId
+                GROUP BY u.id
+            ''')
+            rows = cursor.fetchall()
+            
+        users = [{
+            'id': row[0],
+            'name': row[1],
+            'email': row[2],
+            'dob': row[3],
+            'favorite_color': row[4],
+            'vaultItems': row[5],
+            'lastLogin': row[6]
+        } for row in rows]
+        
+        return jsonify({'users': users}), 200
+    except Exception as e:
+        logger.error(f"Admin users error: {e}")
+        return jsonify({'error': 'Failed to retrieve users'}), 500
+    
+
 @app.route('/logs', methods=['GET'])
 def logs():
     user = authenticate_token()
@@ -531,3 +580,20 @@ def logs():
 
 if __name__ == '__main__':
     app.run(port=3000, debug=True)
+    
+    
+@app.route('/user/info', methods=['GET'])
+def user_info():
+    user = authenticate_token()
+    if isinstance(user, tuple):
+        logger.warning(f"Authentication failed: {user[0].get('error')}")
+        return user
+    try:
+        with sqlite3.connect('database.db') as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT is_admin FROM users WHERE id = ?', (user['id'],))
+            is_admin = cursor.fetchone()
+            return jsonify({'is_admin': bool(is_admin[0])}), 200
+    except Exception as e:
+        logger.error(f"User info error: {e}")
+        return jsonify({'error': 'Failed to retrieve user info'}), 500
