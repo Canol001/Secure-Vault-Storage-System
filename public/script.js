@@ -281,6 +281,7 @@ document.getElementById('store-form')?.addEventListener('submit', async (e) => {
 });
 
 // Verify function
+// In script.js, replace the verify function (around line 292)
 async function verify(section) {
   if (!token) {
     console.warn('No token for verify request');
@@ -288,7 +289,13 @@ async function verify(section) {
     setTimeout(() => { window.location.href = 'index.html'; }, 1000);
     return;
   }
-  const submitButton = document.getElementById(`submit-${section}-verify`);
+  const form = document.getElementById(`${section}-verify-form`);
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (!submitButton) {
+    console.error(`Submit button not found for ${section}-verify-form`);
+    showFeedback('Form configuration error. Please try again.', true);
+    return;
+  }
   toggleButtonLoading(submitButton, true);
   const verifyType = document.getElementById(`${section}-verify-type`).value;
   const answer = document.getElementById(`${section}-verify-answer`).value;
@@ -450,7 +457,6 @@ async function getModifyItems() {
   }
 }
 
-// Modify item
 async function modifyItem(id) {
   if (!token) {
     console.warn('No token for modify item request');
@@ -460,19 +466,69 @@ async function modifyItem(id) {
   }
   currentModifyId = id;
   const modal = document.getElementById('modify-modal');
-  modal.classList.remove('hidden');
   const form = document.getElementById('modify-item-form');
-  form.reset();
-  document.getElementById('modify-key-field').classList.add('hidden');
-  document.getElementById('modify-document-field').classList.add('hidden');
   const typeSelect = document.getElementById('modify-type');
-  typeSelect.replaceWith(typeSelect.cloneNode(true));
-  const newTypeSelect = document.getElementById('modify-type');
-  newTypeSelect.addEventListener('change', () => {
-    const type = newTypeSelect.value;
-    document.getElementById('modify-key-field').classList.toggle('hidden', type !== 'key');
-    document.getElementById('modify-document-field').classList.toggle('hidden', type !== 'document');
-  });
+  const keyField = document.getElementById('modify-key-field');
+  const documentField = document.getElementById('modify-document-field');
+  const titleInput = document.getElementById('modify-title');
+  const keyValueInput = document.getElementById('modify-key-value');
+
+  // Reset form and fields
+  form.reset();
+  keyField.classList.add('hidden');
+  documentField.classList.add('hidden');
+  typeSelect.disabled = false;
+  typeSelect.classList.remove('bg-gray-100', 'cursor-not-allowed');
+
+  try {
+    const response = await fetch(`/vault/item/${id}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const result = await response.json();
+    if (result.error) {
+      showFeedback(result.error, true);
+      modal.classList.add('hidden');
+      return;
+    }
+
+    // Prepopulate form
+    titleInput.value = result.title || '';
+    if (result.type === 'key') {
+      keyValueInput.value = result.data || '';
+      keyField.classList.remove('hidden'); // Show key field
+      documentField.classList.add('hidden'); // Ensure document field is hidden
+      // Lock type to 'key'
+      typeSelect.innerHTML = '<option value="key">Key</option>';
+      typeSelect.value = 'key';
+      typeSelect.disabled = true;
+      typeSelect.classList.add('bg-gray-100', 'cursor-not-allowed');
+      // Remove change event listener to prevent toggling for key items
+      typeSelect.replaceWith(typeSelect.cloneNode(true)); // Clone to remove listeners
+    } else {
+      documentField.classList.remove('hidden'); // Show document field
+      keyField.classList.add('hidden'); // Ensure key field is hidden
+      // Allow both type options for documents
+      typeSelect.innerHTML = `
+        <option value="key">Key</option>
+        <option value="document">Document</option>
+      `;
+      typeSelect.value = result.type;
+      // Reattach change event listener for documents
+      const newTypeSelect = document.getElementById('modify-type');
+      newTypeSelect.addEventListener('change', () => {
+        const type = newTypeSelect.value;
+        document.getElementById('modify-key-field').classList.toggle('hidden', type !== 'key');
+        document.getElementById('modify-document-field').classList.toggle('hidden', type !== 'document');
+      });
+    }
+
+    // Show modal
+    modal.classList.remove('hidden');
+  } catch (err) {
+    console.error('Fetch item error:', err);
+    showFeedback('Error loading item data.', true);
+    modal.classList.add('hidden');
+  }
 }
 
 document.getElementById('modify-item-form')?.addEventListener('submit', async (e) => {
@@ -484,11 +540,46 @@ document.getElementById('modify-item-form')?.addEventListener('submit', async (e
     toggleButtonLoading(submitButton, false);
     return;
   }
+
+  // Fetch item to verify its type
+  let itemType;
+  try {
+    const response = await fetch(`/vault/item/${currentModifyId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const result = await response.json();
+    if (result.error) {
+      showFeedback(result.error, true);
+      toggleButtonLoading(submitButton, false);
+      return;
+    }
+    itemType = result.type;
+  } catch (err) {
+    console.error('Fetch item error:', err);
+    showFeedback('Error fetching item data.', true);
+    toggleButtonLoading(submitButton, false);
+    return;
+  }
+
   const type = document.getElementById('modify-type').value;
   const title = document.getElementById('modify-title').value;
+  if (!title) {
+    showFeedback('Title is required.', true);
+    toggleButtonLoading(submitButton, false);
+    return;
+  }
+
+  // Enforce type consistency for key items
+  if (itemType === 'key' && type !== 'key') {
+    showFeedback('Cannot change a key item to a document.', true);
+    toggleButtonLoading(submitButton, false);
+    return;
+  }
+
   const formData = new FormData();
   formData.append('type', type);
   formData.append('title', title);
+
   if (type === 'key') {
     const keyValue = document.getElementById('modify-key-value').value;
     if (!keyValue) {
@@ -511,6 +602,7 @@ document.getElementById('modify-item-form')?.addEventListener('submit', async (e
     }
     formData.append('document', file);
   }
+
   try {
     const response = await fetch(`/vault/modify/${currentModifyId}`, {
       method: 'PUT',
@@ -539,90 +631,151 @@ document.getElementById('modify-cancel')?.addEventListener('click', () => {
   currentModifyId = null;
 });
 
+
 // Load logs
-async function loadLogs(page = 1) {
+// Ensure script.js is loaded
+console.log('script.js loaded, initializing loadLogs');
+
+// Page check
+console.log('Checking current page:', window.location.pathname, 'Full URL:', window.location.href);
+const isHomePage = window.location.pathname === '/' || 
+                   window.location.pathname === '/home' || 
+                   window.location.pathname.includes('home.html');
+console.log('Is home page:', isHomePage);
+
+if (isHomePage) {
+  console.log('Home page detected, token:', token || 'Not found');
   if (!token) {
-    console.warn('No token for loadLogs');
+    console.warn('No token found on home page load');
     showFeedback('Please log in first.', true);
-    setTimeout(() => { window.location.href = 'index.html'; }, 1000);
+    setTimeout(() => {
+      console.log('Redirecting to index.html due to missing token');
+      window.location.href = 'index.html';
+    }, 1000);
+  } else {
+    console.log('Token present, calling loadLogs');
+    loadLogs();
+  }
+} else {
+  console.warn('Not on expected home page routes, current path:', window.location.pathname);
+  console.log('Page details:', {
+    pathname: window.location.pathname,
+    href: window.location.href
+  });
+  if (token) {
+    console.log('Token found, calling loadLogs for debugging despite not being on home page');
+    loadLogs();
+  } else {
+    console.warn('No token, skipping loadLogs');
+  }
+}
+
+async function loadLogs(page = 1) {
+  console.log('Starting loadLogs function for page:', page);
+
+  if (!token) {
+    console.warn('No token available for loadLogs');
+    showFeedback('Please log in first.', true);
+    setTimeout(() => {
+      console.log('Redirecting to index.html due to missing token in loadLogs');
+      window.location.href = 'index.html';
+    }, 1000);
     return;
   }
+
+  console.log('Token found:', token);
+
   try {
+    console.log('Initiating fetch request to /logs with page:', page);
     const response = await fetch('/logs', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
+
+    console.log('Received response with status:', response.status);
+
     if (response.status === 401 || response.status === 403) {
-      console.warn('Auth error:', response.status);
+      console.warn('Authentication error, status:', response.status);
       showFeedback('Session expired. Please log in again.', true);
       localStorage.removeItem('vaultToken');
-      setTimeout(() => { window.location.href = 'index.html'; }, 1000);
+      console.log('Cleared vaultToken from localStorage');
+      setTimeout(() => {
+        console.log('Redirecting to index.html due to auth error');
+        window.location.href = 'index.html';
+      }, 1000);
       return;
     }
+
     const result = await response.json();
-    console.log('Logs response:', result); // Debug
+    console.log('Parsed server response:', result);
+
     const logsContent = document.getElementById('logs-content');
     const pagination = document.getElementById('logs-pagination');
+
+    if (!logsContent || !pagination) {
+      console.error('DOM elements missing, cannot render logs');
+      showFeedback('Error: Logs section not found in page.', true);
+      return;
+    }
+
     if (result.error) {
-      console.warn('Logs error:', result.error);
+      console.warn('Server returned error:', result.error);
       logsContent.innerHTML = `<p class="text-gray-500 text-sm">${result.error}</p>`;
       showFeedback(result.error, true);
       return;
     }
+
     const sortedLogs = result.logs.sort((a, b) => {
       const dateA = new Date(a.timestamp);
       const dateB = new Date(b.timestamp);
       if (isNaN(dateA) || isNaN(dateB)) {
-        console.warn('Invalid timestamp:', a.timestamp, b.timestamp);
+        console.warn('Invalid timestamp detected:', a.timestamp, b.timestamp);
         return 0;
       }
       return dateB - dateA;
     });
-    console.log('Sorted logs:', sortedLogs); // Debug
+
     const totalLogs = sortedLogs.length;
     if (totalLogs === 0) {
       logsContent.innerHTML = `<p class="text-gray-500 text-sm text-center py-4">No logs available yet. Try storing or retrieving items!</p>`;
       pagination.innerHTML = '';
-      console.log('No logs to display');
       return;
     }
+
     const totalPages = Math.ceil(totalLogs / logsPerPage);
     currentLogPage = Math.min(Math.max(page, 1), totalPages);
     const start = (currentLogPage - 1) * logsPerPage;
     const end = start + logsPerPage;
     const paginatedLogs = sortedLogs.slice(start, end);
+
+    // Render logs
     logsContent.innerHTML = `
       <h3 class="text-md font-semibold text-black mb-3">Analytics</h3>
       <p class="text-gray-700 text-sm">Items Stored: ${result.analytics.itemCount}</p>
       <p class="text-gray-700 text-sm">Last Login: ${result.analytics.lastLogin || 'N/A'}</p>
       <h3 class="text-md font-semibold text-black mt-5 mb-3">Logs</h3>
       <ul class="space-y-1">
-        ${paginatedLogs.map(log => `<li class="text-gray-700 text-sm py-1 border-b border-gray-200">${log.action} at ${log.timestamp}</li>`).join('')}
+        ${paginatedLogs.map(log => {
+          return `<li class="text-gray-700 text-sm py-1 border-b border-gray-200">${log.action} at ${log.timestamp}</li>`;
+        }).join('')}
       </ul>
     `;
-    console.log('Rendered logs:', paginatedLogs); // Debug
-    pagination.innerHTML = '';
-    if (totalPages > 1) {
-      pagination.innerHTML += `
-        <button class="py-1 px-3 bg-white border border-gray-300 rounded-md text-black hover:bg-gray-100 ${currentLogPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}"
-                ${currentLogPage === 1 ? 'disabled' : `onclick="loadLogs(${currentLogPage - 1})"`}>
-          Previous
+
+    // Render responsive pagination (ONLY Previous/Next)
+    pagination.innerHTML = `
+      <div class="flex flex-col sm:flex-row justify-center items-center gap-2 sm:space-x-2 mt-3 sm:mt-4">
+        <button 
+          class="w-full sm:w-auto px-4 py-2 text-sm sm:text-base bg-white border border-gray-300 rounded-md text-black hover:bg-gray-100 transition duration-200 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+          ${currentLogPage === 1 ? 'disabled' : `onclick="loadLogs(${currentLogPage - 1})"`}>
+          ← Previous
         </button>
-      `;
-      for (let i = 1; i <= totalPages; i++) {
-        pagination.innerHTML += `
-          <button class="py-1 px-3 border border-gray-300 rounded-md ${i === currentLogPage ? 'bg-yellow-500 text-black' : 'bg-white text-black hover:bg-gray-100'}"
-                  onclick="loadLogs(${i})">
-            ${i}
-          </button>
-        `;
-      }
-      pagination.innerHTML += `
-        <button class="py-1 px-3 bg-white border border-gray-300 rounded-md text-black hover:bg-gray-100 ${currentLogPage === totalPages ? 'opacity-50 cursor-not-allowed' : ''}"
-                ${currentLogPage === totalPages ? 'disabled' : `onclick="loadLogs(${currentLogPage + 1})"`}>
-          Next
+        <button 
+          class="w-full sm:w-auto px-4 py-2 text-sm sm:text-base bg-white border border-gray-300 rounded-md text-black hover:bg-gray-100 transition duration-200 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+          ${currentLogPage === totalPages ? 'disabled' : `onclick="loadLogs(${currentLogPage + 1})"`}>
+          Next →
         </button>
-      `;
-    }
+      </div>
+    `;
+
   } catch (err) {
     console.error('Load logs error:', err);
     document.getElementById('logs-content').innerHTML = '<p class="text-gray-500 text-sm">Error loading logs.</p>';
@@ -630,17 +783,6 @@ async function loadLogs(page = 1) {
   }
 }
 
-// Check token and load logs on home page load
-if (window.location.pathname.includes('home.html')) {
-  console.log('Home page loaded, token:', token);
-  if (!token) {
-    console.warn('No token on home page load');
-    showFeedback('Please log in first.', true);
-    setTimeout(() => { window.location.href = 'index.html'; }, 1000);
-  } else {
-    loadLogs();
-  }
-}
 
 // Check admin status for admin link
 async function checkAdmin() {

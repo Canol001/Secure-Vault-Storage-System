@@ -16,6 +16,8 @@ import secrets
 import logging
 import random
 
+
+
 # Initialize Flask app
 app = Flask(__name__, static_folder='public', static_url_path='')
 CORS(app)
@@ -175,42 +177,57 @@ def register():
         repeat_password = data.get('repeat_password')
 
         if not all([name, email, dob, favorite_color, password, repeat_password]):
+            logger.warning("Registration failed: Missing required fields")
             return jsonify({'error': 'All fields are required'}), 400
         if not is_valid_email(email):
+            logger.warning(f"Registration failed for {email}: Invalid email format")
             return jsonify({'error': 'Invalid email format'}), 400
         if password != repeat_password:
+            logger.warning(f"Registration failed for {email}: Passwords do not match")
             return jsonify({'error': 'Passwords do not match'}), 400
         if len(password) < 6:
+            logger.warning(f"Registration failed for {email}: Password too short")
             return jsonify({'error': 'Password must be at least 6 characters'}), 400
 
         hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt(SALT_ROUNDS)).decode()
         secret_code = generate_secret_code()
         otp = generate_otp()
+        timestamp = get_eat_timestamp()
 
         with sqlite3.connect('database.db') as conn:
             cursor = conn.cursor()
             try:
                 cursor.execute('''
-                    INSERT INTO users (name, email, dob, favorite_color, password, secret_code)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (name, email, dob, favorite_color, hashed_password, secret_code))
+                    INSERT INTO users (name, email, dob, favorite_color, password, secret_code, lastLogin)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (name, email, dob, favorite_color, hashed_password, secret_code, timestamp))
                 user_id = cursor.lastrowid
+                logger.info(f"User registered: {email}, userId: {user_id}, lastLogin: {timestamp}")
                 cursor.execute('''
                     INSERT INTO otps (email, otp, purpose, timestamp)
                     VALUES (?, ?, ?, ?)
-                ''', (email, otp, 'login', get_eat_timestamp()))
+                ''', (email, otp, 'login', timestamp))
+                logger.info(f"OTP generated for {email}: {otp}")
                 cursor.execute('''
                     INSERT INTO logs (userId, action, timestamp)
                     VALUES (?, ?, ?)
-                ''', (user_id, 'Registered', get_eat_timestamp()))
+                ''', (user_id, 'Registered', timestamp))
+                logger.info(f"Logged 'Registered' action for userId: {user_id}")
+                cursor.execute('''
+                    INSERT INTO logs (userId, action, timestamp)
+                    VALUES (?, ?, ?)
+                ''', (user_id, 'Logged in', timestamp))
+                logger.info(f"Logged 'Logged in' action for userId: {user_id}")
                 conn.commit()
             except sqlite3.IntegrityError:
+                logger.warning(f"Registration failed for {email}: Email already exists")
                 return jsonify({'error': 'Email already exists'}), 400
 
         send_email(email, 'Your Secret Code and OTP', f'Your secret code is: {secret_code}\nYour OTP is: {otp}')
+        logger.info(f"Sent registration email to {email}")
         return jsonify({'message': 'Registration successful. OTP sent to your email'}), 200
     except Exception as e:
-        logger.error(f"Registration error: {e}")
+        logger.error(f"Registration error for {email}: {e}")
         return jsonify({'error': 'Failed to register user'}), 500
 
 @app.route('/login', methods=['POST'])
@@ -221,8 +238,10 @@ def login():
         password = data.get('password')
 
         if not all([email, password]):
+            logger.warning("Login failed: Missing email or password")
             return jsonify({'error': 'Email and password are required'}), 400
         if not is_valid_email(email):
+            logger.warning(f"Login failed for {email}: Invalid email format")
             return jsonify({'error': 'Invalid email format'}), 400
 
         with sqlite3.connect('database.db') as conn:
@@ -230,17 +249,26 @@ def login():
             cursor.execute('SELECT id, password FROM users WHERE email = ?', (email,))
             user = cursor.fetchone()
             if not user or not bcrypt.checkpw(password.encode(), user[1].encode()):
+                logger.warning(f"Login failed for {email}: Invalid credentials")
                 return jsonify({'error': 'Invalid credentials'}), 401
 
+            user_id = user[0]
+            timestamp = get_eat_timestamp()
             otp = generate_otp()
             cursor.execute('INSERT INTO otps (email, otp, purpose, timestamp) VALUES (?, ?, ?, ?)',
-                           (email, otp, 'login', get_eat_timestamp()))
+                           (email, otp, 'login', timestamp))
+            cursor.execute('UPDATE users SET lastLogin = ? WHERE id = ?', (timestamp, user_id))
+            logger.info(f"Updated lastLogin for userId {user_id}: {timestamp}")
+            cursor.execute('INSERT INTO logs (userId, action, timestamp) VALUES (?, ?, ?)',
+                           (user_id, 'Logged in', timestamp))
+            logger.info(f"Logged 'Logged in' action for userId: {user_id}")
             conn.commit()
 
         send_email(email, 'Your OTP', f'Your OTP is: {otp}')
+        logger.info(f"Sent OTP email to {email}")
         return jsonify({'message': 'OTP sent to your email'}), 200
     except Exception as e:
-        logger.error(f"Login error: {e}")
+        logger.error(f"Login error for {email}: {e}")
         return jsonify({'error': 'Failed to send OTP'}), 500
 
 @app.route('/resend-otp', methods=['POST'])
@@ -558,16 +586,27 @@ def logs():
         return user
     try:
         with sqlite3.connect('database.db') as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            # Fetch logs
             cursor.execute('SELECT action, timestamp FROM logs WHERE userId = ?', (user['id'],))
-            cursor.execute('SELECT * FROM logs WHERE userId = ?', (user['id'],))
             raw_logs = cursor.fetchall()
-            logger.info(f"Fetched {len(raw_logs)} raw logs for user {user['id']}: {raw_logs}")  # Debug
-            logs = [{'action': row[2], 'timestamp': row[3]} for row in raw_logs]  # Adjust indices
+            logger.info(f"Fetched {len(raw_logs)} raw logs for user {user['id']}: {[dict(row) for row in raw_logs]}")
+            logs = [{'action': row['action'], 'timestamp': row['timestamp']} for row in raw_logs]
+            # Fetch analytics
             cursor.execute('SELECT COUNT(*) FROM vault WHERE userId = ?', (user['id'],))
             item_count = cursor.fetchone()[0]
             logger.info(f"Vault item count for user {user['id']}: {item_count}")
-        last_login = next((log['timestamp'] for log in logs if log['action'] == 'Logged in'), None)
+            # Try fetching lastLogin from users table, fallback to logs
+            last_login = None
+            try:
+                cursor.execute('SELECT lastLogin FROM users WHERE id = ?', (user['id'],))
+                last_login = cursor.fetchone()[0]
+                logger.info(f"Last login from users table for user {user['id']}: {last_login}")
+            except sqlite3.OperationalError:
+                logger.warning("lastLogin column not found in users table, using logs fallback")
+                last_login = next((log['timestamp'] for log in logs if log['action'] == 'Logged in'), None)
+                logger.info(f"Last login from logs for user {user['id']}: {last_login}")
         response = {
             'logs': logs,
             'analytics': {'itemCount': item_count, 'lastLogin': last_login}

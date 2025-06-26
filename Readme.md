@@ -99,6 +99,49 @@ In an era where data breaches and identity thefts are at an all-time high, this 
 
 ---
 
+## 📥 Local Installation & Setup (for Developers)
+
+1. **Clone the repo**
+   ```bash
+   git clone https://github.com/your-username/secure-vault.git
+   cd secure-vault
+   ```
+
+2. **Create and activate a virtual environment**
+   ```bash
+   # Windows
+   python -m venv venv
+   venv\Scripts\activate
+
+   # macOS/Linux
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Create `.env` file (optional but recommended)**
+   ```env
+   FLASK_ENV=development
+   JWT_SECRET=your_secret_key
+   DATABASE_PATH=database.db
+   ```
+
+5. **Run the app**
+   ```bash
+   flask run
+   ```
+
+6. **Access the app**
+   ```
+   http://127.0.0.1:5000
+   ```
+
+---
+
 ## 🌐 Deployment Instructions (Render)
 
 1. **Create a Web Service** on [Render](https://render.com) connected to your GitHub repository.
@@ -109,7 +152,7 @@ In an era where data breaches and identity thefts are at an all-time high, this 
      ```
      /mnt/data
      ```  
-   - Recommended size: **512MB or more** depending on expected database growth
+   - Recommended size: **512MB or more**
 
 3. **Set Build Command** to:
    ```bash
@@ -130,8 +173,6 @@ In an era where data breaches and identity thefts are at an all-time high, this 
    | `DATABASE_PATH`   | `/mnt/data/database.db`        | Path to SQLite DB on persistent disk |
 
 6. **Update your app to use the Persistent Disk** for SQLite:
-
-   Modify your database initialization logic:
    ```python
    import os
    db_path = os.getenv("DATABASE_PATH", "database.db")
@@ -140,3 +181,5 @@ In an era where data breaches and identity thefts are at an all-time high, this 
    ```
 
 7. **Push your code to GitHub**, and Render will automatically deploy it.
+
+---
