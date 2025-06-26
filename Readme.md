@@ -137,7 +137,7 @@ In an era where data breaches and identity thefts are at an all-time high, this 
 
 6. **Access the app**
    ```
-   http://127.0.0.1:5000
+   http://127.0.0.1:3000
    ```
 
 ---
