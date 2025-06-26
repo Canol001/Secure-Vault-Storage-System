@@ -70,6 +70,7 @@ In an era where data breaches and identity thefts are at an all-time high, this 
 | favorite_color| TEXT      |
 | password      | TEXT      |
 | secret_code   | TEXT      |
+| lastlogin     | TEXT      |
 
 ### `otps` table
 | Field    | Type |
