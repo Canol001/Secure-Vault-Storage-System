@@ -16,8 +16,6 @@ import secrets
 import logging
 import random
 
-
-
 # Initialize Flask app
 app = Flask(__name__, static_folder='public', static_url_path='')
 CORS(app)
@@ -34,15 +32,26 @@ ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY').encode()
 JWT_SECRET = os.getenv('JWT_SECRET')
 EMAIL_USER = os.getenv('EMAIL_USER')
 EMAIL_PASS = os.getenv('EMAIL_PASS')
+ADMIN_KEY = os.getenv('ADMIN_KEY')  # Admin key for no-login access
 SALT_ROUNDS = 10
 
-if not all([ENCRYPTION_KEY, JWT_SECRET, EMAIL_USER, EMAIL_PASS]):
+if not all([ENCRYPTION_KEY, JWT_SECRET, EMAIL_USER, EMAIL_PASS, ADMIN_KEY]):
     raise ValueError("Missing required environment variables")
 
 # Initialize Fernet for encryption
 fernet = Fernet(ENCRYPTION_KEY)
 
 # Database Setup
+def update_db_schema():
+    with sqlite3.connect('database.db') as conn:
+        conn.execute('PRAGMA foreign_keys = ON;')
+        try:
+            conn.execute('ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0')
+            conn.commit()
+            logger.info("Added is_admin column to users table")
+        except sqlite3.OperationalError:
+            logger.info("is_admin column already exists")
+
 def init_db():
     with sqlite3.connect('database.db') as conn:
         conn.execute('PRAGMA foreign_keys = ON;')
@@ -78,7 +87,7 @@ def init_db():
                 data TEXT NOT NULL,
                 FOREIGN KEY(userId) REFERENCES users(id)
             )
-        ''')  # ✅ fixed: added closing parenthesis for vault
+        ''')  # Fixed: Removed extra NOT in userId INTEGER NOT NULL
         
         conn.execute('''
             CREATE TABLE IF NOT EXISTS logs (
@@ -88,16 +97,17 @@ def init_db():
                 timestamp TEXT NOT NULL,
                 FOREIGN KEY(userId) REFERENCES users(id)
             )
-        ''')  # ✅ fixed: removed extra closing parenthesis
+        ''')
         
-        conn.commit()  # ✅ normal line, no closing parenthesis here
+        conn.commit()
 
+# Run schema update before initializing database
+update_db_schema()
 init_db()
-
 
 # Helper Functions
 def is_valid_email(email):
-    return bool(email and '@' in email and '.' in email and '.' in email)
+    return bool(email and '@' in email and '.' in email)
 
 def get_eat_timestamp():
     return datetime.datetime.now(pytz.timezone('Africa/Nairobi')).strftime('%m/%d/%Y, %I:%M:%S %p')
@@ -137,6 +147,12 @@ def authenticate_token():
         logger.warning(f"Invalid token: {e}")
         return jsonify({'error': 'Invalid token'}), 403
 
+def authenticate_admin_key():
+    admin_key = request.headers.get('X-Admin-Key')
+    if not admin_key or admin_key != ADMIN_KEY:
+        logger.warning("Invalid or missing admin key")
+        return jsonify({'error': 'Invalid admin key'}), 403
+    return True
 
 # Routes
 @app.route('/')
@@ -198,11 +214,11 @@ def register():
             cursor = conn.cursor()
             try:
                 cursor.execute('''
-                    INSERT INTO users (name, email, dob, favorite_color, password, secret_code, lastLogin)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (name, email, dob, favorite_color, hashed_password, secret_code, timestamp))
+                    INSERT INTO users (name, email, dob, favorite_color, password, secret_code)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (name, email, dob, favorite_color, hashed_password, secret_code))
                 user_id = cursor.lastrowid
-                logger.info(f"User registered: {email}, userId: {user_id}, lastLogin: {timestamp}")
+                logger.info(f"User registered: {email}, userId: {user_id}")
                 cursor.execute('''
                     INSERT INTO otps (email, otp, purpose, timestamp)
                     VALUES (?, ?, ?, ?)
@@ -529,26 +545,20 @@ def vault_modify(id):
         logger.error(f"Vault modify error: {e}")
         return jsonify({'error': 'Failed to modify data'}), 500
 
-@app.route('/admin')
+@app.route('/admin/user/list')
 def serve_admin():
     return send_from_directory('public', 'admin.html')
 
 @app.route('/admin/users', methods=['GET'])
 def admin_users():
-    user = authenticate_token()
-    if isinstance(user, tuple):
-        logger.warning(f"Authentication failed: {user[0].get('error')}")
-        return user
+    # Authenticate using admin key instead of JWT token
+    auth_result = authenticate_admin_key()
+    if isinstance(auth_result, tuple):
+        return auth_result
     
     try:
         with sqlite3.connect('database.db') as conn:
             cursor = conn.cursor()
-            # Check if user is admin
-            cursor.execute('SELECT is_admin FROM users WHERE id = ?', (user['id'],))
-            is_admin = cursor.fetchone()
-            if not is_admin or not is_admin[0]:
-                return jsonify({'error': 'Admin access required'}), 403
-                
             # Get all users and their stats
             cursor.execute('''
                 SELECT u.id, u.name, u.email, u.dob, u.favorite_color,
@@ -576,7 +586,6 @@ def admin_users():
     except Exception as e:
         logger.error(f"Admin users error: {e}")
         return jsonify({'error': 'Failed to retrieve users'}), 500
-    
 
 @app.route('/logs', methods=['GET'])
 def logs():
@@ -588,16 +597,13 @@ def logs():
         with sqlite3.connect('database.db') as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            # Fetch logs
             cursor.execute('SELECT action, timestamp FROM logs WHERE userId = ?', (user['id'],))
             raw_logs = cursor.fetchall()
             logger.info(f"Fetched {len(raw_logs)} raw logs for user {user['id']}: {[dict(row) for row in raw_logs]}")
             logs = [{'action': row['action'], 'timestamp': row['timestamp']} for row in raw_logs]
-            # Fetch analytics
             cursor.execute('SELECT COUNT(*) FROM vault WHERE userId = ?', (user['id'],))
             item_count = cursor.fetchone()[0]
             logger.info(f"Vault item count for user {user['id']}: {item_count}")
-            # Try fetching lastLogin from users table, fallback to logs
             last_login = None
             try:
                 cursor.execute('SELECT lastLogin FROM users WHERE id = ?', (user['id'],))
@@ -617,10 +623,6 @@ def logs():
         logger.error(f"Logs error: {e}")
         return jsonify({'error': 'Failed to retrieve logs'}), 500
 
-if __name__ == '__main__':
-    app.run(port=3000, debug=True)
-    
-    
 @app.route('/user/info', methods=['GET'])
 def user_info():
     user = authenticate_token()
@@ -636,3 +638,6 @@ def user_info():
     except Exception as e:
         logger.error(f"User info error: {e}")
         return jsonify({'error': 'Failed to retrieve user info'}), 500
+
+if __name__ == '__main__':
+    app.run(port=3000, debug=True)
