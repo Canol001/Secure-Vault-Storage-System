@@ -1,8 +1,8 @@
 # 🔐 Secure Vault Management System
 
-> **Author:** [Venom](https://github.com/venomdev)  
-> **Email:** hello@venomgroup.co.ke  
-> **GitHub:** [https://github.com/venomdev](https://github.com/venomdev)  
+> **Author:** [Canol](https://github.com/Canol001)  
+> **Email:** canolowana6@gmail.com  
+> **GitHub:** [https://github.com/Canol001](https://github.com/Canol001)  
 > **License:** MIT  
 > **Version:** 1.0.0
 
