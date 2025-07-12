@@ -1,5 +1,11 @@
 # 🔐 Secure Vault Management System
 
+> **Author:** [Venom](https://github.com/venomdev)  
+> **Email:** hello@venomgroup.co.ke  
+> **GitHub:** [https://github.com/venomdev](https://github.com/venomdev)  
+> **License:** MIT  
+> **Version:** 1.0.0
+
 A powerful and user-centric password and secrets manager built with Flask and SQLite. The system is designed to allow users to securely store sensitive information such as passwords, secret notes, keys, and digital credentials — all backed by OTP authentication, secret codes, and personal encryption.
 
 ---
@@ -70,6 +76,7 @@ In an era where data breaches and identity thefts are at an all-time high, this 
 | favorite_color| TEXT      |
 | password      | TEXT      |
 | secret_code   | TEXT      |
+| lastlogin     | TEXT      |
 
 ### `otps` table
 | Field    | Type |
@@ -137,8 +144,10 @@ In an era where data breaches and identity thefts are at an all-time high, this 
 
 6. **Access the app**
    ```
-   http://127.0.0.1:5000
+   http://127.0.0.1:3000
    ```
+
+![image](https://github.com/user-attachments/assets/d5e2b92a-c5e4-437c-a3dd-edecd2a45251)
 
 ---
 
